@@ -12,11 +12,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
-using System.Text;
 using System.Threading.Tasks;
 using TinyCsvParser;
 using TinyCsvParser.Mapping;
-using System.ComponentModel;
+using NLog.Extensions.Logging;
+using NLog.Config;
 
 namespace OrdersCSVImporter
 {
@@ -46,8 +46,8 @@ namespace OrdersCSVImporter
                         return;
                     }
 
-                    logger.LogError($"'Days from' value {x.DaysFrom}");
-                    logger.LogError($"'Runner Request quantity' value {x.RunnerRequestQuantity}");
+                    logger.LogInformation($"'Days from' value {x.DaysFrom}");
+                    logger.LogInformation($"'Runner Request quantity' value {x.RunnerRequestQuantity}");
 
                     var startDate = DateTime.Now.Subtract(new TimeSpan(x.DaysFrom, 0, 0, 0));
 
@@ -79,18 +79,27 @@ namespace OrdersCSVImporter
 
             var allItems = ParseCSVData(logger, csvData);
 
-            var pageCount = (allItems.Count() / runnerRequestToCreateCount);
+            await CreateRunnerRequests(logger, allItems, runnerRequestToCreateCount);
 
-            if ((allItems.Count() % runnerRequestToCreateCount) != 0)
+            logger.LogInformation("Task finished");
+        }
+
+        static async Task CreateRunnerRequests(ILogger<Program> logger, List<OrderInputData> orderInputData, int runnerRequestToCreateCount)
+        {
+            var pageCount = (orderInputData.Count / runnerRequestToCreateCount);
+
+            if ((orderInputData.Count % runnerRequestToCreateCount) != 0)
             {
                 pageCount++;
             }
+
+            var itemsCount = 0;
 
             for (int i = 0; i < pageCount; i++)
             {
                 logger.LogInformation($"Working with page {i + 1} of {runnerRequestToCreateCount} items");
 
-                var pageItems = allItems
+                var pageItems = orderInputData
                     .Skip(i * runnerRequestToCreateCount)
                     .Take(runnerRequestToCreateCount).ToList();
 
@@ -102,10 +111,15 @@ namespace OrdersCSVImporter
                     return;
                 }
 
-                var completed = await CreateRunnerRequests(logger, itemsWithLocations, runnerRequestToCreateCount);
-            }
+                var result = await CreateRunnerRequests(logger, itemsWithLocations, runnerRequestToCreateCount, itemsCount);
 
-            logger.LogInformation("All done!");
+                if (result.Finished)
+                {
+                    break;
+                }
+
+                itemsCount = result.ItemsCount;
+            }
         }
 
         static async Task<List<OrderInputData>> GetItemLocations(ILogger<Program> logger, List<OrderInputData> orderInputData)
@@ -141,20 +155,24 @@ namespace OrdersCSVImporter
             return orderInputData;
         }
 
-        static async Task<bool> CreateRunnerRequests(ILogger<Program> logger, List<OrderInputData> orderInputData, int runnerRequestToCreateCount)
+        static async Task<dynamic> CreateRunnerRequests(ILogger<Program> logger, List<OrderInputData> orderInputData, int runnerRequestToCreateCount, int itemsCount)
         {
             var itemsToRequest = orderInputData.Where(InValidLocation);
 
             var runnerServiceClient = serviceProvider.GetService<IRunnerServiceClient>();
 
             logger.LogInformation($"Saving {itemsToRequest.Count()} Runner Request...");
-
-            var count = 0;
-
-            foreach (var r in itemsToRequest.Where(x => !string.IsNullOrEmpty(x.LocationCode)))
+            
+            foreach (var r in itemsToRequest)
             {
-                if (count == runnerRequestToCreateCount)
-                    return true;
+                if (itemsCount == runnerRequestToCreateCount)
+                {
+                    return new
+                    {
+                        Finished = true,
+                        ItemsCount = itemsCount
+                    };
+                }
 
                 var runnerRequest = new NewRunnerRequest()
                 {
@@ -180,11 +198,16 @@ namespace OrdersCSVImporter
                 else
                 {
                     logger.LogInformation($"Request created for Serialized Id {r.SerializedId}");
-                    count++;
+                    itemsCount++;
                 }
             }
 
-            return false;
+            return new
+            {
+                Finished = false,
+                ItemsCount = itemsCount
+            };
+
         }
 
         static List<OrderInputData> ParseCSVData(ILogger<Program> logger, string csv)
@@ -345,7 +368,11 @@ namespace OrdersCSVImporter
 
             serviceProvider
                 .GetService<ILoggerFactory>()
-                .AddConsole(LogLevel.Debug);
+                .AddConsole(LogLevel.Information)
+                .AddConsole(LogLevel.Error)
+                .AddNLog();
+
+            NLog.LogManager.Configuration = new XmlLoggingConfiguration(Path.Combine(Microsoft.Extensions.PlatformAbstractions.PlatformServices.Default.Application.ApplicationBasePath, "nlog.config"), true);
         }
 
         class CsvOrderInputDataMapping : CsvMapping<OrderInputData>

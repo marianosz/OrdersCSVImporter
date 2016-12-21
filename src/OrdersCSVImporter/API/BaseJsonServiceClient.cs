@@ -15,12 +15,14 @@ namespace OrdersCSVImporter.API.Client
         string apiKey;
         string baseServiceUrl;
         ILogger<BaseJsonServiceClient> logger;
+        bool onlyLogRequests;
 
-        public BaseJsonServiceClient(APIServiceConfig apiServiceConfig, ILogger<BaseJsonServiceClient> logger)
+        public BaseJsonServiceClient(APIServiceConfig apiServiceConfig, ILogger<BaseJsonServiceClient> logger, bool onlyLogRequests = false)
         {
             this.apiKey = apiServiceConfig.APIKey;
             this.baseServiceUrl = apiServiceConfig.URL;
             this.logger = logger;
+            this.onlyLogRequests = onlyLogRequests;
         }
 
         virtual public string ApiKeyHederName => "api_key";
@@ -193,7 +195,16 @@ namespace OrdersCSVImporter.API.Client
 
         private HttpClient GetHttpClient()
         {
-            var client = new HttpClient();
+            HttpClient client;
+
+            if (this.onlyLogRequests)
+            {
+                client = new HttpClient(new APICallLoggingHandler(new HttpClientHandler(), logger));
+            }
+            else
+            {
+                client = new HttpClient();
+            }
 
             client.BaseAddress = new Uri(baseServiceUrl);
             client.DefaultRequestHeaders.Accept.Clear();
@@ -226,6 +237,57 @@ namespace OrdersCSVImporter.API.Client
 
                 return $"{genericErrorMessage}: {jsonResponse}";
             }
+        }
+    }
+
+
+    class APICallLoggingHandler : DelegatingHandler
+    {
+        ILogger<BaseJsonServiceClient> logger;
+
+        public APICallLoggingHandler(HttpMessageHandler innerHandler, ILogger<BaseJsonServiceClient> logger)
+            : base(innerHandler)
+        {
+            this.logger = logger;
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await LogAPIRequest(request);
+
+            //var response = await base.SendAsync(request, cancellationToken);
+
+            //await LogAPIResponse(response);
+
+            return new HttpResponseMessage() { StatusCode = System.Net.HttpStatusCode.OK, Content = new StringContent("{status:'OK'}")};
+        }
+
+        private async Task LogAPIRequest(HttpRequestMessage r)
+        {
+            var sb = new StringBuilder();
+
+            sb.Append($"Request {r.Method} to {r.RequestUri}");
+
+            if (r.Content != null)
+            {
+                sb.Append($" - Content {await r.Content.ReadAsStringAsync()}");
+            }
+
+            logger.LogTrace(sb.ToString());
+        }
+
+        private async Task LogAPIResponse(HttpResponseMessage r)
+        {
+            var sb = new StringBuilder();
+
+            sb.Append($"Response of {r.RequestMessage.Method} from {r.RequestMessage.RequestUri} - Status Code {r.StatusCode}");
+
+            if (r.Content != null)
+            {
+                sb.Append($" - Content {await r.Content.ReadAsStringAsync()}");
+            }
+
+            logger.LogTrace(sb.ToString());
         }
     }
 }

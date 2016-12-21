@@ -1,5 +1,13 @@
 ﻿{
   "version": "1.0.0-*",
+  "Logging": {
+    "IncludeScopes": false,
+    "LogLevel": {
+      "Default": "Debug",
+      "System": "Information",
+      "Microsoft": "Information"
+    }
+  },
   "buildOptions": {
     "emitEntryPoint": true
   },
@@ -15,7 +23,8 @@
     "Microsoft.Extensions.Configuration.EnvironmentVariables": "1.0.1",
     "Microsoft.Extensions.Configuration.FileExtensions": "1.0.1",
     "Microsoft.Extensions.Configuration.Json": "1.0.1",
-    "CommandLineParser" : "2.1.1-beta",
+    "CommandLineParser": "2.1.1-beta",
+    "NLog.Extensions.Logging": "1.0.0-*",
     "Microsoft.NETCore.App": {
       "type": "platform",
       "version": "1.0.3"
@@ -32,7 +41,8 @@
   },
   "publishOptions": {
     "include": [
+      "nlog.config",
       "appsettings.json"
-      ]
+    ]
   }
 }

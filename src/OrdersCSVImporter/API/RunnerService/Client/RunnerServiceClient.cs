@@ -11,7 +11,7 @@ namespace OrdersCSVImporter.API.RunnerService.Client
     public class RunnerServiceClient : BaseJsonServiceClient, IRunnerServiceClient
     {
         public RunnerServiceClient(IOptions<APIConfig> options, ILogger<RunnerServiceClient> logger)
-            : base(options.Value.RunnerService, logger)
+            : base(options.Value.RunnerService, logger, true)
         {
         }
 
