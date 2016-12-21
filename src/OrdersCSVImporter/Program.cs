@@ -350,10 +350,13 @@ namespace OrdersCSVImporter
 
         static async Task<string> DownloadCSVFile(ILogger<Program> logger)
         {
+            //Random number to invalidate cache
+            var random = new Random();
+            int randomNumber = random.Next(0, 1000);
 
             logger.LogInformation("Downloading CSV File...");
 
-            var requestMessage = new HttpRequestMessage(new HttpMethod("GET"), "https://flightclub.com/media/orders.csv");
+            var requestMessage = new HttpRequestMessage(new HttpMethod("GET"), $"https://flightclub.com/media/orders.csv?nocache={randomNumber}");
 
             using (var client = new HttpClient())
             {
@@ -422,7 +425,7 @@ namespace OrdersCSVImporter
             public int DaysFrom { get; set; }
 
             [Option('r', "runnerRequestQuantity", Required = false, Default = 300,
-            HelpText = "Quantity of runner request to create")]
+            HelpText = "Max quantity of runner request to create")]
             public int RunnerRequestQuantity { get; set; }
 
             [Option('h', "help", HelpText = "Prints this help", Required = false, Default = false)]
