@@ -15,21 +15,19 @@ namespace OrdersCSVImporter.API.Client
         string apiKey;
         string baseServiceUrl;
         ILogger<BaseJsonServiceClient> logger;
-        bool onlyLogRequests;
 
-        public BaseJsonServiceClient(APIServiceConfig apiServiceConfig, ILogger<BaseJsonServiceClient> logger, bool onlyLogRequests = false)
+        public BaseJsonServiceClient(APIServiceConfig apiServiceConfig, ILogger<BaseJsonServiceClient> logger)
         {
             this.apiKey = apiServiceConfig.APIKey;
             this.baseServiceUrl = apiServiceConfig.URL;
             this.logger = logger;
-            this.onlyLogRequests = onlyLogRequests;
         }
 
         virtual public string ApiKeyHederName => "api_key";
 
         public abstract Task<string> GetErrorMessage(string jsonResponse);
 
-        public async Task<APIRequestResult<R>> Post<T, R>(string url, T data)
+        public async Task<APIRequestResult<R>> Post<T, R>(string url, T data, bool onlyLogRequests = false)
         {
             try
             {
@@ -37,7 +35,7 @@ namespace OrdersCSVImporter.API.Client
 
                 requestMessage.Content = new StringContent(JsonConvert.SerializeObject(data), Encoding.UTF8, "application/json");
 
-                using (var client = GetHttpClient())
+                using (var client = GetHttpClient(onlyLogRequests))
                 {
                     var httpResponseMessage = await client.SendAsync(requestMessage);
 
@@ -71,7 +69,7 @@ namespace OrdersCSVImporter.API.Client
                 };
             }
         }
-        public async Task<APIRequestResult> Post<T>(string url, T data)
+        public async Task<APIRequestResult> Post<T>(string url, T data, bool onlyLogRequests = false)
         {
             try
             {
@@ -79,7 +77,7 @@ namespace OrdersCSVImporter.API.Client
 
                 requestMessage.Content = new StringContent(JsonConvert.SerializeObject(data), Encoding.UTF8, "application/json");
 
-                using (var client = GetHttpClient())
+                using (var client = GetHttpClient(onlyLogRequests))
                 {
                     var httpResponseMessage = await client.SendAsync(requestMessage);
 
@@ -193,11 +191,11 @@ namespace OrdersCSVImporter.API.Client
             }
         }
 
-        private HttpClient GetHttpClient()
+        private HttpClient GetHttpClient(bool onlyLogRequests = false)
         {
             HttpClient client;
 
-            if (this.onlyLogRequests)
+            if (onlyLogRequests)
             {
                 client = new HttpClient(new APICallLoggingHandler(new HttpClientHandler(), logger));
             }

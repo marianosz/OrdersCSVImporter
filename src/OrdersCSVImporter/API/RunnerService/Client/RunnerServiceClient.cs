@@ -11,7 +11,7 @@ namespace OrdersCSVImporter.API.RunnerService.Client
     public class RunnerServiceClient : BaseJsonServiceClient, IRunnerServiceClient
     {
         public RunnerServiceClient(IOptions<APIConfig> options, ILogger<RunnerServiceClient> logger)
-            : base(options.Value.RunnerService, logger, true)
+            : base(options.Value.RunnerService, logger)
         {
         }
 
@@ -20,7 +20,12 @@ namespace OrdersCSVImporter.API.RunnerService.Client
 
         public Task<APIRequestResult<RunnerRequest>> PostNewRunnerRequest(NewRunnerRequest runnerRequest)
         {
-            return Post<NewRunnerRequest, RunnerRequest>($"cheffing/request", runnerRequest);
+            return Post<NewRunnerRequest, RunnerRequest>($"cheffing/request", runnerRequest, true);
+        }
+
+        public Task<APIRequestResult<List<FullCheffingItem>>> GetUnassignedWebRunnerRequests(string warehouse)
+        {
+            return Get<List<FullCheffingItem>>($"cheffing/item/warehouse/{warehouse}/type/WEB/unassigned");
         }
     }
 }

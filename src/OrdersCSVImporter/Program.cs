@@ -79,13 +79,39 @@ namespace OrdersCSVImporter
 
             var allItems = ParseCSVData(logger, csvData);
 
-            await CreateRunnerRequests(logger, allItems, runnerRequestToCreateCount);
+            var laItems = allItems.Where(x => x.SerializedId.StartsWith("L")).ToList();
+            var nyItems = allItems.Where(x => x.SerializedId.StartsWith("N")).ToList();
+
+            await CreateRunnerRequests(logger, laItems, "NY", runnerRequestToCreateCount);
+            await CreateRunnerRequests(logger, nyItems, "LA", runnerRequestToCreateCount);
 
             logger.LogInformation("Task finished");
         }
 
-        static async Task CreateRunnerRequests(ILogger<Program> logger, List<OrderInputData> orderInputData, int runnerRequestToCreateCount)
+        static async Task CreateRunnerRequests(ILogger<Program> logger, List<OrderInputData> orderInputData, string warehouse, int maxRunnerRequestToCreateCount)
         {
+            logger.LogInformation($"Creating {warehouse} Running request...");
+
+            var runnerServiceClient = serviceProvider.GetService<IRunnerServiceClient>();
+
+            var getUnassignedWebRunnerRequests = await runnerServiceClient.GetUnassignedWebRunnerRequests(warehouse);
+
+            if (getUnassignedWebRunnerRequests.HasError)
+            {
+                logger.LogError($"Couldn´t retrieve unasigned items. {getUnassignedWebRunnerRequests.ErrorMessage}. Aborting process!");
+                return;
+            }
+
+            var unassignedCount = getUnassignedWebRunnerRequests.Data.Count;
+
+            if (unassignedCount >= maxRunnerRequestToCreateCount)
+            {
+                logger.LogInformation ($"Unassigned request count: {unassignedCount}. Aborting process!");
+                return;
+            }
+
+            var runnerRequestToCreateCount = maxRunnerRequestToCreateCount - unassignedCount;
+            
             var pageCount = (orderInputData.Count / runnerRequestToCreateCount);
 
             if ((orderInputData.Count % runnerRequestToCreateCount) != 0)
