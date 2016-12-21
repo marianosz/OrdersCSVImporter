@@ -15,11 +15,14 @@
     "Microsoft.Extensions.Configuration.EnvironmentVariables": "1.0.1",
     "Microsoft.Extensions.Configuration.FileExtensions": "1.0.1",
     "Microsoft.Extensions.Configuration.Json": "1.0.1",
+    "CommandLineParser" : "2.1.1-beta",
     "Microsoft.NETCore.App": {
       "type": "platform",
       "version": "1.0.3"
     },
-    "Newtonsoft.Json": "9.0.1"
+    "Newtonsoft.Json": "9.0.1",
+    "System.Runtime": "4.3.0",
+    "runtime.any.System.Runtime": "4.1.0"
   },
 
   "frameworks": {

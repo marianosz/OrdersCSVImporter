@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using CommandLine;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OrdersCSVImporter.API;
@@ -15,6 +16,7 @@ using System.Text;
 using System.Threading.Tasks;
 using TinyCsvParser;
 using TinyCsvParser.Mapping;
+using System.ComponentModel;
 
 namespace OrdersCSVImporter
 {
@@ -25,33 +27,47 @@ namespace OrdersCSVImporter
 
         public static void Main(string[] args)
         {
-            Setup();
-
-            var logger = serviceProvider.GetService<ILoggerFactory>()
-                .CreateLogger<Program>();
-
-            logger.LogInformation("Starting tool");
-
-            var daysFrom = 30;
+            ILogger<Program> logger = null;
 
             try
             {
-                if (args.Length == 1)
+                Setup();
+
+                logger = serviceProvider.GetService<ILoggerFactory>()
+                    .CreateLogger<Program>();
+
+                var argsResult = CommandLine.Parser.Default.ParseArguments<Options>(args);
+
+                argsResult.WithParsed(x =>
                 {
-                    daysFrom = int.Parse(args[0]);
-                }
+                    if (x.Help)
+                    {
+                        Console.WriteLine(CommandLine.Text.HelpText.AutoBuild(argsResult));
+                        return;
+                    }
 
-                var startDate = DateTime.Now.Subtract(new TimeSpan(daysFrom, 0, 0, 0));
+                    logger.LogError($"'Days from' value {x.DaysFrom}");
+                    logger.LogError($"'Runner Request quantity' value {x.RunnerRequestQuantity}");
 
-                ImportFile(logger, startDate).Wait();
+                    var startDate = DateTime.Now.Subtract(new TimeSpan(x.DaysFrom, 0, 0, 0));
+
+                    ImportFile(logger, startDate, x.RunnerRequestQuantity).Wait();
+                });
             }
             catch (Exception ex)
             {
-                logger.LogError($"Exception; {ex.ToString()}");
+                if (logger != null)
+                {
+                    logger.LogError($"Exception; {ex.ToString()}");
+                }
+                else
+                {
+                    Console.WriteLine($"Startup Exception; {ex.ToString()}");
+                }
             }
         }
 
-        static async Task ImportFile(ILogger<Program> logger, DateTime startDate)
+        static async Task ImportFile(ILogger<Program> logger, DateTime startDate, int runnerRequestToCreateCount)
         {
             var csvData = await GetCSVData(logger, startDate);
 
@@ -63,11 +79,31 @@ namespace OrdersCSVImporter
 
             var allItems = ParseCSVData(logger, csvData);
 
-            var itemsSublist = allItems.Take(300).ToList();
+            var pageCount = (allItems.Count() / runnerRequestToCreateCount);
 
-            await GetItemLocations(logger, itemsSublist);
+            if ((allItems.Count() % runnerRequestToCreateCount) != 0)
+            {
+                pageCount++;
+            }
 
-            await CreateRunnerRequests(logger, itemsSublist);
+            for (int i = 0; i < pageCount; i++)
+            {
+                logger.LogInformation($"Working with page {i + 1} of {runnerRequestToCreateCount} items");
+
+                var pageItems = allItems
+                    .Skip(i * runnerRequestToCreateCount)
+                    .Take(runnerRequestToCreateCount).ToList();
+
+                var itemsWithLocations = await GetItemLocations(logger, pageItems);
+
+                if (itemsWithLocations == null)
+                {
+                    logger.LogError("Error getting locations. Aborting process!");
+                    return;
+                }
+
+                var completed = await CreateRunnerRequests(logger, itemsWithLocations, runnerRequestToCreateCount);
+            }
 
             logger.LogInformation("All done!");
         }
@@ -76,9 +112,9 @@ namespace OrdersCSVImporter
         {
             var locationServiceClient = serviceProvider.GetService<ILocationServiceClient>();
 
-            var orderInputSerializedIds = orderInputData.Select(x => x.SerializedId.Remove(0,1)).ToList();
+            var orderInputSerializedIds = orderInputData.Select(x => x.SerializedId.Remove(0, 1)).ToList();
 
-            logger.LogInformation("Getting the items locations");
+            logger.LogInformation("Getting the items locations...");
 
             var getProductsLocationResult = await locationServiceClient.GetProductsLocation(orderInputSerializedIds);
 
@@ -105,14 +141,21 @@ namespace OrdersCSVImporter
             return orderInputData;
         }
 
-        static async Task CreateRunnerRequests(ILogger<Program> logger, List<OrderInputData> orderInputData)
+        static async Task<bool> CreateRunnerRequests(ILogger<Program> logger, List<OrderInputData> orderInputData, int runnerRequestToCreateCount)
         {
+            var itemsToRequest = orderInputData.Where(InValidLocation);
+
             var runnerServiceClient = serviceProvider.GetService<IRunnerServiceClient>();
 
-            logger.LogInformation($"Saving {orderInputData.Count} Runner Request");
+            logger.LogInformation($"Saving {itemsToRequest.Count()} Runner Request...");
 
-            foreach (var r in orderInputData.Where(x => !string.IsNullOrEmpty(x.LocationCode)))
+            var count = 0;
+
+            foreach (var r in itemsToRequest.Where(x => !string.IsNullOrEmpty(x.LocationCode)))
             {
+                if (count == runnerRequestToCreateCount)
+                    return true;
+
                 var runnerRequest = new NewRunnerRequest()
                 {
                     SalesPerson = "Magento",
@@ -137,8 +180,11 @@ namespace OrdersCSVImporter
                 else
                 {
                     logger.LogInformation($"Request created for Serialized Id {r.SerializedId}");
+                    count++;
                 }
             }
+
+            return false;
         }
 
         static List<OrderInputData> ParseCSVData(ILogger<Program> logger, string csv)
@@ -153,6 +199,7 @@ namespace OrdersCSVImporter
             return csvParser
                 .ReadFromString(csvReadOptions, csv)
                 .Select(x => x.Result)
+                .Where(IsShoe)
                 .OrderBy(OrderByShippingMethod)
                 .ThenBy(x => x.CreatedAt)
                 .ToList();
@@ -174,8 +221,6 @@ namespace OrdersCSVImporter
 
         static async Task<string> GetCSVData(ILogger<Program> logger, DateTime startDate)
         {
-            logger.LogInformation("Request CSV File Creation");
-
             var requestCSVFileCreationResult = await RequestCSVFileCreation(logger, startDate);
 
             if (!requestCSVFileCreationResult)
@@ -183,14 +228,55 @@ namespace OrdersCSVImporter
                 return null;
             }
 
-            logger.LogInformation("Download CSV File");
-
             return await DownloadCSVFile(logger);
+        }
+
+        static bool IsShoe(OrderInputData data)
+        {
+            var sid = GetSIDFromSerializedId(data.SerializedId);
+
+            if (sid.StartsWith("7"))
+                return false;
+
+            return true;
+        }
+
+        static bool InValidLocation(OrderInputData data)
+        {
+            if (string.IsNullOrEmpty(data.LocationCode))
+                return false;
+
+            if (data.LocationCode.Contains("STAGE"))
+                return false;
+
+            if (data.LocationCode.Contains("STAGING"))
+                return false;
+
+            if (data.LocationCode.Contains("SALESFLOOR"))
+                return false;
+
+            if (data.LocationCode.Contains("CONSIGNMENT"))
+                return false;
+
+            if (data.LocationCode.Contains("MISSING"))
+                return false;
+
+            if (data.LocationCode.Contains("SOLD"))
+                return false;
+
+            return true;
+        }
+
+        static string GetSIDFromSerializedId(string serializedId)
+        {
+            return serializedId.Substring(1, 6);
         }
 
         static async Task<bool> RequestCSVFileCreation(ILogger<Program> logger, DateTime from)
         {
-            long afterValue = (long) (from - new DateTime(1970, 1, 1, 0, 0, 0, 0, System.DateTimeKind.Utc)).TotalSeconds;
+            logger.LogInformation("Requesting CSV File Creation...");
+
+            long afterValue = (long)(from - new DateTime(1970, 1, 1, 0, 0, 0, 0, System.DateTimeKind.Utc)).TotalSeconds;
 
             var requestMessage = new HttpRequestMessage(new HttpMethod("GET"), $"http://ecommerce-admin.flightclub.com/run.orders.php?after={afterValue}");
 
@@ -202,6 +288,8 @@ namespace OrdersCSVImporter
 
                 if (httpResponseMessage.IsSuccessStatusCode)
                 {
+                    logger.LogInformation("CSV File created!");
+
                     return true;
                 }
 
@@ -213,6 +301,9 @@ namespace OrdersCSVImporter
 
         static async Task<string> DownloadCSVFile(ILogger<Program> logger)
         {
+
+            logger.LogInformation("Downloading CSV File...");
+
             var requestMessage = new HttpRequestMessage(new HttpMethod("GET"), "https://flightclub.com/media/orders.csv");
 
             using (var client = new HttpClient())
@@ -223,6 +314,8 @@ namespace OrdersCSVImporter
 
                 if (httpResponseMessage.IsSuccessStatusCode)
                 {
+                    logger.LogInformation("CSV File downloaded!");
+
                     return fileResponse;
                 }
                 else
@@ -236,9 +329,9 @@ namespace OrdersCSVImporter
         static void Setup()
         {
             var builder = new ConfigurationBuilder()
-                .SetBasePath(Path.Combine(AppContext.BaseDirectory, "../../../"))
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                .AddEnvironmentVariables();
+                          .SetBasePath(Path.Combine(AppContext.BaseDirectory, "../../../"))
+                          .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                          .AddEnvironmentVariables();
 
             configuration = builder.Build();
 
@@ -254,7 +347,7 @@ namespace OrdersCSVImporter
                 .GetService<ILoggerFactory>()
                 .AddConsole(LogLevel.Debug);
         }
-        
+
         class CsvOrderInputDataMapping : CsvMapping<OrderInputData>
         {
             public CsvOrderInputDataMapping()
@@ -266,6 +359,20 @@ namespace OrdersCSVImporter
                 MapProperty(3, x => x.ShippingMethod);
                 MapProperty(4, x => x.SerializedId);
             }
+        }
+
+        class Options
+        {
+            [Option('d', "daysFrom", Required = false, Default = 30,
+            HelpText = "Days from today to get the date to retrieve the CSV.")]
+            public int DaysFrom { get; set; }
+
+            [Option('r', "runnerRequestQuantity", Required = false, Default = 300,
+            HelpText = "Quantity of runner request to create")]
+            public int RunnerRequestQuantity { get; set; }
+
+            [Option('h', "help", HelpText = "Prints this help", Required = false, Default = false)]
+            public bool Help { get; set; }
         }
     }
 }
