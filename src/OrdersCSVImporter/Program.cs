@@ -351,11 +351,19 @@ namespace OrdersCSVImporter
 
         static void Setup()
         {
+#if DEBUG
             var builder = new ConfigurationBuilder()
                           .SetBasePath(Path.Combine(AppContext.BaseDirectory, "../../../"))
                           .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
                           .AddEnvironmentVariables();
+#endif
 
+#if RELEASE
+             var builder = new ConfigurationBuilder()
+                          .SetBasePath(AppContext.BaseDirectory)
+                          .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                          .AddEnvironmentVariables();
+#endif
             configuration = builder.Build();
 
             serviceProvider = new ServiceCollection()
