@@ -256,13 +256,13 @@ namespace OrdersCSVImporter
 
         static int OrderByShippingMethod(OrderInputData value)
         {
-            string MatrixrateExpressSaver = "matrixrate_express_saver";
+            string Matrixrate2day = "matrixrate_2day ";
             string MatrixratePriorityOvernight = "matrixrate_priority_overnight";
 
             if (value.ShippingMethod == MatrixratePriorityOvernight)
                 return 0;
 
-            if (value.ShippingMethod == MatrixrateExpressSaver)
+            if (value.ShippingMethod == Matrixrate2day)
                 return 1;
 
             return 2;

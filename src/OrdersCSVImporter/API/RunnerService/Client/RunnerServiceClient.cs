@@ -18,9 +18,9 @@ namespace OrdersCSVImporter.API.RunnerService.Client
         public override async Task<string> GetErrorMessage(string jsonResponse)
             => (await DeserializeObject<ErrorMessage>(jsonResponse)).Message;
 
-        public Task<APIRequestResult<RunnerRequest>> PostNewRunnerRequest(NewRunnerRequest runnerRequest)
+        public Task<APIRequestResult> PostNewRunnerRequest(NewRunnerRequest runnerRequest)
         {
-            return Post<NewRunnerRequest, RunnerRequest>($"cheffing/request", runnerRequest, true);
+            return Post<NewRunnerRequest>($"cheffing/request", runnerRequest);
         }
 
         public Task<APIRequestResult<List<FullCheffingItem>>> GetUnassignedWebRunnerRequests(string warehouse)
