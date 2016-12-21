@@ -9,5 +9,7 @@ namespace OrdersCSVImporter.API.RunnerService.Client
         Task<APIRequestResult> PostNewRunnerRequest(NewRunnerRequest runnerRequest);
 
         Task<APIRequestResult<List<FullCheffingItem>>> GetUnassignedWebRunnerRequests(string warehouse);
+
+        Task<APIRequestResult> RefreshLocations();
     }
 }

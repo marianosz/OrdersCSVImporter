@@ -23,6 +23,11 @@ namespace OrdersCSVImporter.API.RunnerService.Client
             return Post<NewRunnerRequest>($"cheffing/request", runnerRequest);
         }
 
+        public Task<APIRequestResult> RefreshLocations()
+        {
+            return Post<string>($"cheffing/request/type/web/refresh", string.Empty);
+        }
+        
         public Task<APIRequestResult<List<FullCheffingItem>>> GetUnassignedWebRunnerRequests(string warehouse)
         {
             return Get<List<FullCheffingItem>>($"cheffing/item/warehouse/{warehouse}/type/WEB/unassigned");

@@ -17,6 +17,7 @@ using TinyCsvParser;
 using TinyCsvParser.Mapping;
 using NLog.Extensions.Logging;
 using NLog.Config;
+using OrdersCSVImporter.API.InventoryService.Client;
 
 namespace OrdersCSVImporter
 {
@@ -65,34 +66,129 @@ namespace OrdersCSVImporter
                     Console.WriteLine($"Startup Exception; {ex.ToString()}");
                 }
             }
+            finally
+            {
+                Console.WriteLine("Press a key to continue...");
+                Console.ReadKey();
+            }
         }
 
         static async Task ImportFile(ILogger<Program> logger, DateTime startDate, int runnerRequestToCreateCount)
         {
-            var csvData = await GetCSVData(logger, startDate);
-
-            if (string.IsNullOrEmpty(csvData))
+            if (await RunnerQueueHasSpace(logger, "NY", runnerRequestToCreateCount))
             {
-                logger.LogError("Couldn´t retrieve csv data form magento. Aborting process!");
-                return;
+                var csvData = await GetCSVData(logger, startDate);
+
+                if (string.IsNullOrEmpty(csvData))
+                {
+                    logger.LogError("Couldn´t retrieve csv data form magento. Aborting process!");
+                    return;
+                }
+
+                var allItems = ParseCSVData(logger, csvData);
+
+                //var laItems = allItems.Where(x => x.SerializedId.StartsWith("L")).ToList();
+                var nyItems = allItems.Where(x => x.SerializedId.StartsWith("N")).ToList();
+
+                await CreateRunnerRequests(logger, nyItems, "NY", runnerRequestToCreateCount);
+                //await CreateRunnerRequests(logger, nyItems, "LA", runnerRequestToCreateCount);
+
+                await RefreshLocations(logger);
             }
-
-            var allItems = ParseCSVData(logger, csvData);
-
-            //var laItems = allItems.Where(x => x.SerializedId.StartsWith("L")).ToList();
-            var nyItems = allItems.Where(x => x.SerializedId.StartsWith("N")).ToList();
-
-            await CreateRunnerRequests(logger, nyItems, "NY", runnerRequestToCreateCount);
-            //await CreateRunnerRequests(logger, nyItems, "LA", runnerRequestToCreateCount);
 
             logger.LogInformation("Task finished");
         }
 
-        static async Task CreateRunnerRequests(ILogger<Program> logger, List<OrderInputData> orderInputData, string warehouse, int maxRunnerRequestToCreateCount)
+        static async Task RefreshLocations(ILogger<Program> logger)
         {
-            logger.LogInformation($"Creating {warehouse} Running request...");
+
+            logger.LogInformation($"Refreshing locations...");
 
             var runnerServiceClient = serviceProvider.GetService<IRunnerServiceClient>();
+
+            var refreshLocationsResult = await runnerServiceClient.RefreshLocations();
+
+            if (refreshLocationsResult.HasError)
+            {
+                logger.LogError($"Error refreshing locations: {refreshLocationsResult.ErrorMessage}");
+                return;
+            }
+
+            logger.LogInformation($"Locations Refreshed!");
+
+        }
+
+        //static async Task<List<OrderInputData>> GetShoeItems()
+        //{
+        //    foreach (var r in itemsToRequest)
+        //    {
+        //        if (itemsCount == runnerRequestToCreateCount)
+        //        {
+        //            return new
+        //            {
+        //                Finished = true,
+        //                ItemsCount = itemsCount
+        //            };
+        //        }
+
+        //        var runnerRequest = new NewRunnerRequest()
+        //        {
+        //            SalesPerson = "Magento",
+        //            Warehouse = r.SerializedId.First() == 'N' ? "NY" : "LA",
+        //            @Type = "WEB",
+        //            DestinationId = r.SerializedId.First() == 'N' ? int.Parse(configuration["NYShippingLocation"]) : int.Parse(configuration["LAShippingLocation"]),
+        //            Items = new List<RunnerItem>()
+        //             {
+        //                  new RunnerItem()
+        //                  {
+        //                      SerializedId = r.SerializedId.Remove(0, 1),
+        //                  }
+        //             }
+        //        };
+
+        //        var postNewRunnerRequestResult = await runnerServiceClient.PostNewRunnerRequest(runnerRequest);
+
+        //        if (postNewRunnerRequestResult.HasError)
+        //        {
+        //            logger.LogError($"Error creating request for Serialized Id {r.SerializedId}: {postNewRunnerRequestResult.ErrorMessage}");
+        //        }
+        //        else
+        //        {
+        //            logger.LogInformation($"Request created for Serialized Id {r.SerializedId}");
+        //            itemsCount++;
+        //        }
+        //    }
+
+        //}
+
+        static async Task<bool> RunnerQueueHasSpace(ILogger<Program> logger, string warehouse, int maxRunnerRequestToCreateCount)
+        {
+            var runnerServiceClient = serviceProvider.GetService<IRunnerServiceClient>();
+
+            var getUnassignedWebRunnerRequests = await runnerServiceClient.GetUnassignedWebRunnerRequests(warehouse);
+
+            if (getUnassignedWebRunnerRequests.HasError)
+            {
+                logger.LogError($"Couldn´t retrieve unasigned items. {getUnassignedWebRunnerRequests.ErrorMessage}. Aborting process!");
+                return false;
+            }
+
+            var unassignedCount = getUnassignedWebRunnerRequests.Data.Count;
+
+            if (unassignedCount >= maxRunnerRequestToCreateCount)
+            {
+                logger.LogInformation($"Queue is Full, unassigned request count: {unassignedCount}. Aborting process!");
+                return false;
+            }
+
+            return true;
+        }
+
+        static async Task CreateRunnerRequests(ILogger<Program> logger, List<OrderInputData> orderInputData, string warehouse, int maxRunnerRequestToCreateCount)
+        {
+            var runnerServiceClient = serviceProvider.GetService<IRunnerServiceClient>();
+
+            logger.LogInformation($"Creating {warehouse} Running request...");
 
             var getUnassignedWebRunnerRequests = await runnerServiceClient.GetUnassignedWebRunnerRequests(warehouse);
 
@@ -111,10 +207,12 @@ namespace OrdersCSVImporter
             }
 
             var runnerRequestToCreateCount = maxRunnerRequestToCreateCount - unassignedCount;
-            
-            var pageCount = (orderInputData.Count / runnerRequestToCreateCount);
 
-            if ((orderInputData.Count % runnerRequestToCreateCount) != 0)
+            var pageSize = 600;
+
+            var pageCount = (orderInputData.Count / pageSize);
+
+            if ((orderInputData.Count % pageSize) != 0)
             {
                 pageCount++;
             }
@@ -126,8 +224,8 @@ namespace OrdersCSVImporter
                 logger.LogInformation($"Working with page {i + 1} of {runnerRequestToCreateCount} items");
 
                 var pageItems = orderInputData
-                    .Skip(i * runnerRequestToCreateCount)
-                    .Take(runnerRequestToCreateCount).ToList();
+                    .Skip(i * pageSize)
+                    .Take(pageSize).ToList();
 
                 var itemsWithLocations = await GetItemLocations(logger, pageItems);
 
@@ -223,8 +321,15 @@ namespace OrdersCSVImporter
                 }
                 else
                 {
-                    logger.LogInformation($"Request created for Serialized Id {r.SerializedId}");
-                    itemsCount++;
+                    if (postNewRunnerRequestResult.StatusCode == System.Net.HttpStatusCode.NoContent)
+                    {
+                        logger.LogInformation($"Request already exists for Serialized Id {r.SerializedId}");
+                    }
+                    else
+                    {
+                        logger.LogInformation($"Request created for Serialized Id {r.SerializedId}");
+                        itemsCount++;
+                    }
                 }
             }
 
@@ -313,6 +418,9 @@ namespace OrdersCSVImporter
             if (data.LocationCode.Contains("SOLD"))
                 return false;
 
+            if (data.LocationCode.Contains("CSTSRV"))
+                return false;
+            
             return true;
         }
 
@@ -394,6 +502,7 @@ namespace OrdersCSVImporter
                 .AddLogging()
                 .AddSingleton<ILocationServiceClient, LocationServiceClient>()
                 .AddSingleton<IRunnerServiceClient, RunnerServiceClient>()
+                .AddSingleton<IInventoryServiceClient, InventoryServiceClient>()
                 .BuildServiceProvider();
 
             serviceProvider
@@ -424,7 +533,7 @@ namespace OrdersCSVImporter
             HelpText = "Days from today to get the date to retrieve the CSV.")]
             public int DaysFrom { get; set; }
 
-            [Option('r', "runnerRequestQuantity", Required = false, Default = 300,
+            [Option('r', "runnerRequestQuantity", Required = false, Default = 600,
             HelpText = "Max quantity of runner request to create")]
             public int RunnerRequestQuantity { get; set; }
 
