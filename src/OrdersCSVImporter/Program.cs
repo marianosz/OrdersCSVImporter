@@ -79,10 +79,10 @@ namespace OrdersCSVImporter
 
             var allItems = ParseCSVData(logger, csvData);
 
-            var laItems = allItems.Where(x => x.SerializedId.StartsWith("L")).ToList();
+            //var laItems = allItems.Where(x => x.SerializedId.StartsWith("L")).ToList();
             var nyItems = allItems.Where(x => x.SerializedId.StartsWith("N")).ToList();
 
-            await CreateRunnerRequests(logger, laItems, "NY", runnerRequestToCreateCount);
+            await CreateRunnerRequests(logger, nyItems, "NY", runnerRequestToCreateCount);
             //await CreateRunnerRequests(logger, nyItems, "LA", runnerRequestToCreateCount);
 
             logger.LogInformation("Task finished");
