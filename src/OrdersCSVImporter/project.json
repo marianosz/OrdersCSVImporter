@@ -9,7 +9,8 @@
     }
   },
   "buildOptions": {
-    "emitEntryPoint": true
+    "emitEntryPoint": true,
+    "copyToOutput": { "includeFiles": [ "nlog.config", "appsettings.json" ] }
   },
 
   "dependencies": {

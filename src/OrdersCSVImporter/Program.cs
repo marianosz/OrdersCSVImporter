@@ -83,7 +83,7 @@ namespace OrdersCSVImporter
             var nyItems = allItems.Where(x => x.SerializedId.StartsWith("N")).ToList();
 
             await CreateRunnerRequests(logger, laItems, "NY", runnerRequestToCreateCount);
-            await CreateRunnerRequests(logger, nyItems, "LA", runnerRequestToCreateCount);
+            //await CreateRunnerRequests(logger, nyItems, "LA", runnerRequestToCreateCount);
 
             logger.LogInformation("Task finished");
         }
@@ -377,19 +377,12 @@ namespace OrdersCSVImporter
 
         static void Setup()
         {
-#if DEBUG
-            var builder = new ConfigurationBuilder()
-                          .SetBasePath(Path.Combine(AppContext.BaseDirectory, "../../../"))
-                          .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                          .AddEnvironmentVariables();
-#endif
 
-#if RELEASE
              var builder = new ConfigurationBuilder()
                           .SetBasePath(AppContext.BaseDirectory)
                           .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
                           .AddEnvironmentVariables();
-#endif
+
             configuration = builder.Build();
 
             serviceProvider = new ServiceCollection()
