@@ -51,6 +51,7 @@ namespace OrdersCSVImporter
 
                     logger.LogInformation($"'Days from' value {x.DaysFrom}");
                     logger.LogInformation($"'Runner Request quantity' value {x.RunnerRequestQuantity}");
+                    logger.LogInformation($"'Minutes to Refresh' value {x.TimeToRefresh}");
 
                     var startDate = DateTime.Now.Subtract(new TimeSpan(x.DaysFrom, 0, 0, 0));
 
@@ -59,7 +60,7 @@ namespace OrdersCSVImporter
                     timer = new Timer(
                         (o) => {
                             ImportFile(logger, startDate, x.RunnerRequestQuantity).Wait();
-                        }, null, 1000, 30 * 60 * 1000);
+                        }, null, 1000, x.TimeToRefresh * 60 * 1000);
 
                     autoEvent.WaitOne();
                 });
@@ -387,8 +388,9 @@ namespace OrdersCSVImporter
             return csvParser
                 .ReadFromString(csvReadOptions, csv)
                 .Select(x => x.Result)
-                .Where(IsShoe)
+                //.Where(IsShoe)
                 .OrderBy(OrderByShippingMethod)
+                .ThenBy(OrderByShoeNonShoe)
                 .ThenBy(x => x.CreatedAt)
                 .ToList();
         }
@@ -405,6 +407,14 @@ namespace OrdersCSVImporter
                 return 1;
 
             return 2;
+        }
+
+        static int OrderByShoeNonShoe(OrderInputData value)
+        {
+            if (IsShoe(value))
+                return 0;
+
+            return 1;
         }
 
         static async Task<string> GetCSVData(ILogger<Program> logger, DateTime startDate)
@@ -460,7 +470,7 @@ namespace OrdersCSVImporter
 
         static string GetSIDFromSerializedId(string serializedId)
         {
-            return serializedId.Substring(1, 6);
+            return serializedId.Substring(2, 6);
         }
 
         static async Task<bool> RequestCSVFileCreation(ILogger<Program> logger, DateTime from)
@@ -558,6 +568,7 @@ namespace OrdersCSVImporter
                 MapProperty(2, x => x.CreatedAt);
                 MapProperty(3, x => x.ShippingMethod);
                 MapProperty(4, x => x.SerializedId);
+                MapProperty(5, x => x.Warehouse);
             }
         }
 
@@ -570,6 +581,10 @@ namespace OrdersCSVImporter
             [Option('r', "runnerRequestQuantity", Required = false, Default = 400,
             HelpText = "Max quantity of runner request to create")]
             public int RunnerRequestQuantity { get; set; }
+
+            [Option('t', "timeToRefresh", Required = false, Default = 15,
+            HelpText = "Time to run the refresh in minutes")]
+            public int TimeToRefresh { get; set; }
 
             [Option('h', "help", HelpText = "Prints this help", Required = false, Default = false)]
             public bool Help { get; set; }
