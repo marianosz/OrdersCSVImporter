@@ -89,28 +89,44 @@ namespace OrdersCSVImporter
 
         static async Task ImportFile(ILogger<Program> logger, DateTime startDate, int runnerRequestToCreateCount)
         {
-            if (await RunnerQueueHasSpace(logger, "NY", runnerRequestToCreateCount))
+            try
             {
-                var csvData = await GetCSVData(logger, startDate);
-
-                if (string.IsNullOrEmpty(csvData))
+                if (await RunnerQueueHasSpace(logger, "NY", runnerRequestToCreateCount))
                 {
-                    logger.LogError("Couldn´t retrieve csv data form magento. Aborting process!");
-                    return;
+                    var csvData = await GetCSVData(logger, startDate);
+
+                    if (string.IsNullOrEmpty(csvData))
+                    {
+                        logger.LogError("Couldn´t retrieve csv data form magento. Aborting process!");
+                        return;
+                    }
+
+                    var allItems = ParseCSVData(logger, csvData);
+
+                    //var laItems = allItems.Where(x => x.SerializedId.StartsWith("L")).ToList();
+                    var nyItems = allItems.Where(x => x.SerializedId.StartsWith("N")).ToList();
+
+                    await CreateRunnerRequests(logger, nyItems, "NY", runnerRequestToCreateCount);
+                    //await CreateRunnerRequests(logger, nyItems, "LA", runnerRequestToCreateCount);
+
+                    await RefreshLocations(logger);
                 }
 
-                var allItems = ParseCSVData(logger, csvData);
-
-                //var laItems = allItems.Where(x => x.SerializedId.StartsWith("L")).ToList();
-                var nyItems = allItems.Where(x => x.SerializedId.StartsWith("N")).ToList();
-
-                await CreateRunnerRequests(logger, nyItems, "NY", runnerRequestToCreateCount);
-                //await CreateRunnerRequests(logger, nyItems, "LA", runnerRequestToCreateCount);
-
-                await RefreshLocations(logger);
+                logger.LogInformation("Task finished");
             }
+            catch (Exception ex)
+            {
+                if (logger != null)
+                {
+                    logger.LogError($"Exception; {ex.ToString()}");
+                }
+                else
+                {
+                    Console.WriteLine($"Startup Exception; {ex.ToString()}");
+                }
 
-            logger.LogInformation("Task finished");
+                return;
+            }
         }
 
         static async Task RefreshLocations(ILogger<Program> logger)
@@ -235,7 +251,7 @@ namespace OrdersCSVImporter
 
             for (int i = 0; i < pageCount; i++)
             {
-                logger.LogInformation($"Working with page {i + 1} of {runnerRequestToCreateCount} items");
+                logger.LogInformation($"Working with page {i + 1} of {pageCount} for a total of {runnerRequestToCreateCount} items");
 
                 var pageItems = orderInputData
                     .Skip(i * pageSize)
@@ -258,6 +274,8 @@ namespace OrdersCSVImporter
 
                 itemsCount = result.ItemsCount;
             }
+
+            logger.LogInformation($"Created {itemsCount} Runner requests!");
         }
 
         static async Task<List<OrderInputData>> GetItemLocations(ILogger<Program> logger, List<OrderInputData> orderInputData)
@@ -547,7 +565,7 @@ namespace OrdersCSVImporter
             HelpText = "Days from today to get the date to retrieve the CSV.")]
             public int DaysFrom { get; set; }
 
-            [Option('r', "runnerRequestQuantity", Required = false, Default = 600,
+            [Option('r', "runnerRequestQuantity", Required = false, Default = 400,
             HelpText = "Max quantity of runner request to create")]
             public int RunnerRequestQuantity { get; set; }
 
