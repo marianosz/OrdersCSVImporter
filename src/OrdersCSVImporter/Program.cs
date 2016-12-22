@@ -18,6 +18,7 @@ using TinyCsvParser.Mapping;
 using NLog.Extensions.Logging;
 using NLog.Config;
 using OrdersCSVImporter.API.InventoryService.Client;
+using System.Threading;
 
 namespace OrdersCSVImporter
 {
@@ -29,6 +30,7 @@ namespace OrdersCSVImporter
         public static void Main(string[] args)
         {
             ILogger<Program> logger = null;
+            Timer timer = null;
 
             try
             {
@@ -52,7 +54,14 @@ namespace OrdersCSVImporter
 
                     var startDate = DateTime.Now.Subtract(new TimeSpan(x.DaysFrom, 0, 0, 0));
 
-                    ImportFile(logger, startDate, x.RunnerRequestQuantity).Wait();
+                    var autoEvent = new AutoResetEvent(false);
+
+                    timer = new Timer(
+                        (o) => {
+                            ImportFile(logger, startDate, x.RunnerRequestQuantity).Wait();
+                        }, null, 1000, 30 * 60 * 1000);
+
+                    autoEvent.WaitOne();
                 });
             }
             catch (Exception ex)
@@ -68,6 +77,11 @@ namespace OrdersCSVImporter
             }
             finally
             {
+                if (timer != null)
+                {
+                    timer.Dispose();
+                }
+
                 Console.WriteLine("Press a key to continue...");
                 Console.ReadKey();
             }
