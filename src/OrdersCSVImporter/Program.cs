@@ -107,6 +107,8 @@ namespace OrdersCSVImporter
                     //var laItems = allItems.Where(x => x.SerializedId.StartsWith("L")).ToList();
                     var nyItems = allItems.Where(x => x.SerializedId.StartsWith("N")).ToList();
 
+                    logger.LogInformation($"Items to process {nyItems.Count}");
+
                     await CreateRunnerRequests(logger, nyItems, "NY", runnerRequestToCreateCount);
                     //await CreateRunnerRequests(logger, nyItems, "LA", runnerRequestToCreateCount);
 
