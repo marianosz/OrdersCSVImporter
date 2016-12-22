@@ -211,6 +211,8 @@ namespace OrdersCSVImporter
                 return false;
             }
 
+            logger.LogInformation($"Current queue size: {unassignedCount}.");
+
             return true;
         }
 
@@ -218,7 +220,7 @@ namespace OrdersCSVImporter
         {
             var runnerServiceClient = serviceProvider.GetService<IRunnerServiceClient>();
 
-            logger.LogInformation($"Creating {warehouse} Running request...");
+            logger.LogInformation($"Creating {maxRunnerRequestToCreateCount} Running request...");
 
             var getUnassignedWebRunnerRequests = await runnerServiceClient.GetUnassignedWebRunnerRequests(warehouse);
 
@@ -438,11 +440,11 @@ namespace OrdersCSVImporter
             if (data.LocationCode.Contains("STAGING"))
                 return false;
 
-            if (data.LocationCode.Contains("SALESFLOOR"))
-                return false;
+            //if (data.LocationCode.Contains("SALESFLOOR"))
+            //    return false;
 
-            if (data.LocationCode.Contains("CONSIGNMENT"))
-                return false;
+            //if (data.LocationCode.Contains("CONSIGNMENT"))
+            //    return false;
 
             if (data.LocationCode.Contains("MISSING"))
                 return false;
