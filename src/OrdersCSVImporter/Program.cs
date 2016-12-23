@@ -272,12 +272,12 @@ namespace OrdersCSVImporter
 
                 var result = await CreateRunnerRequests(logger, itemsWithLocations, runnerRequestToCreateCount, itemsCount);
 
+                itemsCount = result.ItemsCount;
+
                 if (result.Finished)
                 {
                     break;
                 }
-
-                itemsCount = result.ItemsCount;
             }
 
             logger.LogInformation($"Created {itemsCount} Runner requests!");
