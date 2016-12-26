@@ -390,7 +390,7 @@ namespace OrdersCSVImporter
             return csvParser
                 .ReadFromString(csvReadOptions, csv)
                 .Select(x => x.Result)
-                //.Where(IsShoe)
+                .Where(x => x.OrderStatus == "processing")
                 .OrderBy(OrderByShippingMethod)
                 .ThenBy(OrderByShoeNonShoe)
                 .ThenBy(x => x.CreatedAt)
@@ -401,14 +401,18 @@ namespace OrdersCSVImporter
         {
             string Matrixrate2day = "matrixrate_2day ";
             string MatrixratePriorityOvernight = "matrixrate_priority_overnight";
-
+            string MatrixrateExpressSaver= "matrixrate_express_saver";
+            
             if (value.ShippingMethod == MatrixratePriorityOvernight)
                 return 0;
 
             if (value.ShippingMethod == Matrixrate2day)
                 return 1;
 
-            return 2;
+            if (value.ShippingMethod == MatrixrateExpressSaver)
+                return 2;
+
+            return 3;
         }
 
         static int OrderByShoeNonShoe(OrderInputData value)
@@ -452,11 +456,11 @@ namespace OrdersCSVImporter
             if (data.LocationCode.Contains("STAGING"))
                 return false;
 
-            //if (data.LocationCode.Contains("SALESFLOOR"))
-            //    return false;
+            if (data.LocationCode.Contains("SALESFLOOR"))
+                return false;
 
-            //if (data.LocationCode.Contains("CONSIGNMENT"))
-            //    return false;
+            if (data.LocationCode.Contains("CONSIGNMENT"))
+                return false;
 
             if (data.LocationCode.Contains("MISSING"))
                 return false;
@@ -570,7 +574,8 @@ namespace OrdersCSVImporter
                 MapProperty(2, x => x.CreatedAt);
                 MapProperty(3, x => x.ShippingMethod);
                 MapProperty(4, x => x.SerializedId);
-                MapProperty(5, x => x.Warehouse);
+                MapProperty(5, x => x.OrderStatus);
+                MapProperty(6, x => x.Warehouse);
             }
         }
 

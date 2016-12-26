@@ -17,6 +17,8 @@ namespace OrdersCSVImporter.Model
 
         public string SerializedId { get; set; }
 
+        public string OrderStatus { get; set; }
+
         public string Warehouse { get; set; }
 
         public string LocationCode { get; set; }
